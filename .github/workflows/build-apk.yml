@@ -1,1 +1,134 @@
+name: OpenReel - Build APK
 
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Extract OpenReel V10
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "OPENREEL V10"
+          echo "========================================"
+
+          ZIP="./OpenReel-complete-project-v10-fixed.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ERRO: V10 não encontrado:"
+            echo "$ZIP"
+            echo ""
+            echo "ZIPs disponíveis:"
+            find . -type f -iname "*.zip" \
+              -not -path "./.git/*" \
+              -print
+            exit 1
+          fi
+
+          echo "ZIP utilizado:"
+          echo "$ZIP"
+
+          rm -rf _flutter_project
+          mkdir -p _flutter_project
+
+          unzip -q "$ZIP" -d _flutter_project
+
+          PUBSPEC="$(find _flutter_project -type f -name pubspec.yaml | head -n 1)"
+
+          if [ -z "$PUBSPEC" ]; then
+            echo "ERRO: o V10 não contém pubspec.yaml."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PUBSPEC")"
+          PROJECT_DIR="$(realpath "$PROJECT_DIR")"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo ""
+          echo "========================================"
+          echo "PROJETO EXTRAÍDO"
+          echo "========================================"
+
+          echo "$PROJECT_DIR"
+
+          echo ""
+          echo "========================================"
+          echo "VALIDANDO ARQUIVOS"
+          echo "========================================"
+
+          test -f "$PROJECT_DIR/pubspec.yaml"
+          test -d "$PROJECT_DIR/lib"
+          test -d "$PROJECT_DIR/test"
+          test -d "$PROJECT_DIR/android"
+
+          echo "Estrutura Flutter válida."
+
+          echo ""
+          echo "========================================"
+          echo "EXPORT_SERVICE REALMENTE USADO"
+          echo "========================================"
+
+          nl -ba "$PROJECT_DIR/lib/services/export_service.dart" | sed -n '535,555p'
+
+          echo ""
+          echo "========================================"
+          echo "PROCURANDO OS OPERADORES PROBLEMÁTICOS"
+          echo "========================================"
+
+          if sed -n '535,555p' \
+            "$PROJECT_DIR/lib/services/export_service.dart" | grep -nE '_desktopProcess!'; then
+            echo ""
+            echo "ERRO: ainda existe _desktopProcess! no trecho problemático."
+            exit 1
+          fi
+
+          echo "OK: nenhum _desktopProcess! encontrado no trecho."
+
+      - name: Flutter Pub Get
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter pub get
+
+      - name: Dart Format
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: dart format lib test
+
+      - name: Flutter Analyze
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter analyze
+
+      - name: Flutter Test
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter test
+
+      - name: Build APK Release
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openreel-release-apk
+          path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
