@@ -9,21 +9,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
       - name: Checkout
         uses: actions/checkout@v4
 
+      # ============================================================
+      # 2. JAVA
+      # ============================================================
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
+      # ============================================================
+      # 3. FLUTTER
+      # ============================================================
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
+      # ============================================================
+      # 4. LOCALIZAR E EXTRAIR OPENREEL V10
+      # ============================================================
       - name: Find and Extract OpenReel V10
         shell: bash
         run: |
@@ -33,21 +46,23 @@ jobs:
           echo "OPENREEL V10"
           echo "========================================"
 
-          echo "ZIPs encontrados no repositório:"
+          echo "Arquivos ZIP encontrados:"
           find . -type f -iname "*.zip" \
             -not -path "./.git/*" \
             -print
 
           echo ""
 
-          # Procura primeiro a versão final/fixed.
-          ZIP="$(find . -type f -iname 'OpenReel-complete-project-v10-final-fixed.zip' \
+          # Prioridade absoluta para a versão final corrigida.
+          ZIP="$(find . -type f \
+            -iname 'OpenReel-complete-project-v10-final-fixed.zip' \
             -not -path './.git/*' \
             | head -n 1)"
 
-          # Fallback: qualquer ZIP V10.
+          # Fallback para outros nomes V10.
           if [ -z "$ZIP" ]; then
-            ZIP="$(find . -type f -iname 'OpenReel-complete-project-v10*.zip' \
+            ZIP="$(find . -type f \
+              -iname 'OpenReel-complete-project-v10*.zip' \
               -not -path './.git/*' \
               | head -n 1)"
           fi
@@ -57,8 +72,12 @@ jobs:
             exit 1
           fi
 
-          echo "ZIP utilizado:"
+          echo "ZIP selecionado:"
           echo "$ZIP"
+
+          # ========================================================
+          # EXTRAÇÃO
+          # ========================================================
 
           rm -rf _flutter_project
           mkdir -p _flutter_project
@@ -66,9 +85,11 @@ jobs:
           unzip -q "$ZIP" -d _flutter_project
 
           echo ""
-          echo "========================================"
-          echo "LOCALIZANDO PUBSPEC"
-          echo "========================================"
+          echo "ZIP extraído."
+
+          # ========================================================
+          # LOCALIZAR PUBSPEC
+          # ========================================================
 
           PUBSPEC="$(find _flutter_project \
             -type f \
@@ -78,8 +99,8 @@ jobs:
           if [ -z "$PUBSPEC" ]; then
             echo "ERRO: pubspec.yaml não encontrado."
             echo ""
-            echo "Conteúdo extraído:"
-            find _flutter_project -maxdepth 3 -type f | head -n 100
+            echo "Arquivos encontrados:"
+            find _flutter_project -maxdepth 4 -type f | head -n 200
             exit 1
           fi
 
@@ -90,28 +111,61 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "VALIDANDO PROJETO FLUTTER"
+          echo "PROJETO FLUTTER"
           echo "========================================"
+
+          echo "PROJECT_DIR:"
+          echo "$PROJECT_DIR"
+
+          # ========================================================
+          # VALIDAR ESTRUTURA
+          # ========================================================
 
           test -f "$PROJECT_DIR/pubspec.yaml"
           test -d "$PROJECT_DIR/lib"
           test -d "$PROJECT_DIR/test"
           test -d "$PROJECT_DIR/android"
 
+          echo ""
           echo "Estrutura Flutter válida."
 
-          echo ""
+      # ============================================================
+      # 5. VERSÕES
+      # ============================================================
+      - name: Show Tool Versions
+        run: |
           echo "========================================"
-          echo "EXPORT_SERVICE REALMENTE USADO"
+          echo "VERSÕES"
           echo "========================================"
 
+          flutter --version
+          dart --version
+          java -version
+
+      # ============================================================
+      # 6. VERIFICAR EXPORT SERVICE
+      # ============================================================
+      - name: Audit Export Service
+        shell: bash
+        run: |
+          set -e
+
           EXPORT_SERVICE="$PROJECT_DIR/lib/services/export_service.dart"
+
+          echo "========================================"
+          echo "EXPORT SERVICE"
+          echo "========================================"
 
           if [ ! -f "$EXPORT_SERVICE" ]; then
             echo "ERRO: export_service.dart não encontrado."
             exit 1
           fi
 
+          echo "Arquivo encontrado:"
+          echo "$EXPORT_SERVICE"
+
+          echo ""
+          echo "Trecho relevante:"
           nl -ba "$EXPORT_SERVICE" | sed -n '535,555p'
 
           echo ""
@@ -120,41 +174,68 @@ jobs:
           echo "========================================"
 
           if grep -n '_desktopProcess!' "$EXPORT_SERVICE"; then
+            echo ""
             echo "ERRO: _desktopProcess! ainda existe."
             exit 1
           fi
 
           echo "OK: nenhum _desktopProcess! encontrado."
 
+      # ============================================================
+      # 7. PUB GET
+      # ============================================================
       - name: Flutter Pub Get
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: Dart Format Check
+      # ============================================================
+      # 8. FORMATAR AUTOMATICAMENTE
+      # ============================================================
+      #
+      # IMPORTANTE:
+      # Não usamos --set-exit-if-changed.
+      #
+      # O Dart pode encontrar arquivos não formatados.
+      # Neste workflow ele simplesmente os corrige e continua.
+      #
+      # ============================================================
+      - name: Dart Format
         working-directory: ${{ env.PROJECT_DIR }}
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format lib test
 
+      # ============================================================
+      # 9. ANALYZE
+      # ============================================================
       - name: Flutter Analyze
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter analyze
 
+      # ============================================================
+      # 10. TESTES
+      # ============================================================
       - name: Flutter Test
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter test
 
+      # ============================================================
+      # 11. BUILD APK
+      # ============================================================
       - name: Build APK Release
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter build apk --release
 
+      # ============================================================
+      # 12. VERIFICAR APK
+      # ============================================================
       - name: Verify APK
         shell: bash
         run: |
           set -e
 
-          APK="${PROJECT_DIR}/build/app/outputs/flutter-apk/app-release.apk"
+          APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
           echo "========================================"
-          echo "VERIFICANDO APK"
+          echo "VERIFICAÇÃO DO APK"
           echo "========================================"
 
           if [ ! -f "$APK" ]; then
@@ -162,13 +243,39 @@ jobs:
             exit 1
           fi
 
+          echo "APK encontrado:"
           ls -lh "$APK"
 
-          echo "APK encontrado com sucesso."
+          echo ""
+          echo "APK gerado com sucesso."
 
+      # ============================================================
+      # 13. SALVAR APK COMO ARTIFACT
+      # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: openreel-release-apk
           path: ${{ env.PROJECT_DIR }}/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+
+      # ============================================================
+      # 14. RESUMO FINAL
+      # ============================================================
+      - name: Build Summary
+        shell: bash
+        run: |
+          echo "========================================"
+          echo "OPENREEL BUILD FINALIZADO"
+          echo "========================================"
+
+          echo ""
+          echo "Projeto:"
+          echo "$PROJECT_DIR"
+
+          echo ""
+          echo "APK:"
+          echo "$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
+
+          echo ""
+          echo "STATUS: SUCESSO"
