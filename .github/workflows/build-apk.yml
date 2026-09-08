@@ -24,25 +24,36 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract OpenReel V10 Final
+      - name: Find and Extract OpenReel V10
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "OPENREEL V10 FINAL"
+          echo "OPENREEL V10"
           echo "========================================"
 
-          ZIP="./OpenReel-complete-project-v10-final-fixed.zip"
+          echo "ZIPs encontrados no repositório:"
+          find . -type f -iname "*.zip" \
+            -not -path "./.git/*" \
+            -print
 
-          if [ ! -f "$ZIP" ]; then
-            echo "ERRO: V10 não encontrado:"
-            echo "$ZIP"
-            echo ""
-            echo "ZIPs disponíveis:"
-            find . -type f -iname "*.zip" \
-              -not -path "./.git/*" \
-              -print
+          echo ""
+
+          # Procura primeiro a versão final/fixed.
+          ZIP="$(find . -type f -iname 'OpenReel-complete-project-v10-final-fixed.zip' \
+            -not -path './.git/*' \
+            | head -n 1)"
+
+          # Fallback: qualquer ZIP V10.
+          if [ -z "$ZIP" ]; then
+            ZIP="$(find . -type f -iname 'OpenReel-complete-project-v10*.zip' \
+              -not -path './.git/*' \
+              | head -n 1)"
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERRO: nenhum ZIP V10 encontrado."
             exit 1
           fi
 
@@ -54,10 +65,21 @@ jobs:
 
           unzip -q "$ZIP" -d _flutter_project
 
-          PUBSPEC="$(find _flutter_project -type f -name pubspec.yaml | head -n 1)"
+          echo ""
+          echo "========================================"
+          echo "LOCALIZANDO PUBSPEC"
+          echo "========================================"
+
+          PUBSPEC="$(find _flutter_project \
+            -type f \
+            -name pubspec.yaml \
+            | head -n 1)"
 
           if [ -z "$PUBSPEC" ]; then
             echo "ERRO: pubspec.yaml não encontrado."
+            echo ""
+            echo "Conteúdo extraído:"
+            find _flutter_project -maxdepth 3 -type f | head -n 100
             exit 1
           fi
 
@@ -68,7 +90,7 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "VALIDANDO PROJETO"
+          echo "VALIDANDO PROJETO FLUTTER"
           echo "========================================"
 
           test -f "$PROJECT_DIR/pubspec.yaml"
@@ -83,15 +105,21 @@ jobs:
           echo "EXPORT_SERVICE REALMENTE USADO"
           echo "========================================"
 
-          nl -ba "$PROJECT_DIR/lib/services/export_service.dart" | sed -n '535,555p'
+          EXPORT_SERVICE="$PROJECT_DIR/lib/services/export_service.dart"
+
+          if [ ! -f "$EXPORT_SERVICE" ]; then
+            echo "ERRO: export_service.dart não encontrado."
+            exit 1
+          fi
+
+          nl -ba "$EXPORT_SERVICE" | sed -n '535,555p'
 
           echo ""
           echo "========================================"
           echo "VERIFICANDO _desktopProcess!"
           echo "========================================"
 
-          if grep -n '_desktopProcess!' \
-            "$PROJECT_DIR/lib/services/export_service.dart"; then
+          if grep -n '_desktopProcess!' "$EXPORT_SERVICE"; then
             echo "ERRO: _desktopProcess! ainda existe."
             exit 1
           fi
@@ -102,9 +130,9 @@ jobs:
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter pub get
 
-      - name: Dart Format
+      - name: Dart Format Check
         working-directory: ${{ env.PROJECT_DIR }}
-        run: dart format lib test
+        run: dart format --output=none --set-exit-if-changed lib test
 
       - name: Flutter Analyze
         working-directory: ${{ env.PROJECT_DIR }}
@@ -117,6 +145,26 @@ jobs:
       - name: Build APK Release
         working-directory: ${{ env.PROJECT_DIR }}
         run: flutter build apk --release
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+
+          APK="${PROJECT_DIR}/build/app/outputs/flutter-apk/app-release.apk"
+
+          echo "========================================"
+          echo "VERIFICANDO APK"
+          echo "========================================"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          ls -lh "$APK"
+
+          echo "APK encontrado com sucesso."
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
