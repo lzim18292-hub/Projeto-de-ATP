@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ============================================================
       # 1. CHECKOUT
       # ============================================================
@@ -16,14 +17,17 @@ jobs:
         uses: actions/checkout@v4
 
       # ============================================================
-      # 2. JAVA
+      # 2. JAVA 17
+      # ============================================================
+      # IMPORTANTE:
+      # Não usar cache: gradle aqui.
+      # O projeto Android ainda está dentro do ZIP neste momento.
       # ============================================================
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       # ============================================================
       # 3. FLUTTER
@@ -46,20 +50,20 @@ jobs:
           echo "OPENREEL V10"
           echo "========================================"
 
-          echo "Arquivos ZIP encontrados:"
+          echo "ZIPs encontrados:"
           find . -type f -iname "*.zip" \
             -not -path "./.git/*" \
             -print
 
           echo ""
 
-          # Prioridade absoluta para a versão final corrigida.
+          # Primeiro procura exatamente pela V10 final corrigida.
           ZIP="$(find . -type f \
             -iname 'OpenReel-complete-project-v10-final-fixed.zip' \
             -not -path './.git/*' \
             | head -n 1)"
 
-          # Fallback para outros nomes V10.
+          # Caso não encontre, procura qualquer ZIP V10.
           if [ -z "$ZIP" ]; then
             ZIP="$(find . -type f \
               -iname 'OpenReel-complete-project-v10*.zip' \
@@ -76,7 +80,7 @@ jobs:
           echo "$ZIP"
 
           # ========================================================
-          # EXTRAÇÃO
+          # EXTRAIR
           # ========================================================
 
           rm -rf _flutter_project
@@ -85,7 +89,7 @@ jobs:
           unzip -q "$ZIP" -d _flutter_project
 
           echo ""
-          echo "ZIP extraído."
+          echo "ZIP extraído com sucesso."
 
           # ========================================================
           # LOCALIZAR PUBSPEC
@@ -111,22 +115,14 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "PROJETO FLUTTER"
+          echo "VALIDANDO PROJETO FLUTTER"
           echo "========================================"
-
-          echo "PROJECT_DIR:"
-          echo "$PROJECT_DIR"
-
-          # ========================================================
-          # VALIDAR ESTRUTURA
-          # ========================================================
 
           test -f "$PROJECT_DIR/pubspec.yaml"
           test -d "$PROJECT_DIR/lib"
           test -d "$PROJECT_DIR/test"
           test -d "$PROJECT_DIR/android"
 
-          echo ""
           echo "Estrutura Flutter válida."
 
       # ============================================================
@@ -143,7 +139,7 @@ jobs:
           java -version
 
       # ============================================================
-      # 6. VERIFICAR EXPORT SERVICE
+      # 6. AUDITAR EXPORT SERVICE
       # ============================================================
       - name: Audit Export Service
         shell: bash
@@ -161,7 +157,7 @@ jobs:
             exit 1
           fi
 
-          echo "Arquivo encontrado:"
+          echo "Arquivo:"
           echo "$EXPORT_SERVICE"
 
           echo ""
@@ -189,22 +185,17 @@ jobs:
         run: flutter pub get
 
       # ============================================================
-      # 8. FORMATAR AUTOMATICAMENTE
+      # 8. FORMATAR DART
       # ============================================================
-      #
-      # IMPORTANTE:
-      # Não usamos --set-exit-if-changed.
-      #
-      # O Dart pode encontrar arquivos não formatados.
-      # Neste workflow ele simplesmente os corrige e continua.
-      #
+      # Não usar --set-exit-if-changed.
+      # O workflow corrige automaticamente a formatação.
       # ============================================================
       - name: Dart Format
         working-directory: ${{ env.PROJECT_DIR }}
         run: dart format lib test
 
       # ============================================================
-      # 9. ANALYZE
+      # 9. FLUTTER ANALYZE
       # ============================================================
       - name: Flutter Analyze
         working-directory: ${{ env.PROJECT_DIR }}
@@ -218,7 +209,7 @@ jobs:
         run: flutter test
 
       # ============================================================
-      # 11. BUILD APK
+      # 11. BUILD APK RELEASE
       # ============================================================
       - name: Build APK Release
         working-directory: ${{ env.PROJECT_DIR }}
@@ -235,7 +226,7 @@ jobs:
           APK="$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
           echo "========================================"
-          echo "VERIFICAÇÃO DO APK"
+          echo "VERIFICANDO APK"
           echo "========================================"
 
           if [ ! -f "$APK" ]; then
@@ -243,6 +234,7 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "APK encontrado:"
           ls -lh "$APK"
 
@@ -250,7 +242,7 @@ jobs:
           echo "APK gerado com sucesso."
 
       # ============================================================
-      # 13. SALVAR APK COMO ARTIFACT
+      # 13. UPLOAD APK
       # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -260,13 +252,13 @@ jobs:
           if-no-files-found: error
 
       # ============================================================
-      # 14. RESUMO FINAL
+      # 14. RESUMO
       # ============================================================
       - name: Build Summary
         shell: bash
         run: |
           echo "========================================"
-          echo "OPENREEL BUILD FINALIZADO"
+          echo "OPENREEL BUILD"
           echo "========================================"
 
           echo ""
@@ -278,4 +270,4 @@ jobs:
           echo "$PROJECT_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
           echo ""
-          echo "STATUS: SUCESSO"
+          echo "STATUS: BUILD CONCLUÍDO COM SUCESSO"
