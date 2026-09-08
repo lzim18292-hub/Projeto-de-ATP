@@ -24,16 +24,16 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Extract OpenReel V10
+      - name: Extract OpenReel V10 Final
         shell: bash
         run: |
           set -e
 
           echo "========================================"
-          echo "OPENREEL V10"
+          echo "OPENREEL V10 FINAL"
           echo "========================================"
 
-          ZIP="./OpenReel-complete-project-v10-fixed.zip"
+          ZIP="./OpenReel-complete-project-v10-final-fixed.zip"
 
           if [ ! -f "$ZIP" ]; then
             echo "ERRO: V10 não encontrado:"
@@ -57,7 +57,7 @@ jobs:
           PUBSPEC="$(find _flutter_project -type f -name pubspec.yaml | head -n 1)"
 
           if [ -z "$PUBSPEC" ]; then
-            echo "ERRO: o V10 não contém pubspec.yaml."
+            echo "ERRO: pubspec.yaml não encontrado."
             exit 1
           fi
 
@@ -68,14 +68,7 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "PROJETO EXTRAÍDO"
-          echo "========================================"
-
-          echo "$PROJECT_DIR"
-
-          echo ""
-          echo "========================================"
-          echo "VALIDANDO ARQUIVOS"
+          echo "VALIDANDO PROJETO"
           echo "========================================"
 
           test -f "$PROJECT_DIR/pubspec.yaml"
@@ -94,17 +87,16 @@ jobs:
 
           echo ""
           echo "========================================"
-          echo "PROCURANDO OS OPERADORES PROBLEMÁTICOS"
+          echo "VERIFICANDO _desktopProcess!"
           echo "========================================"
 
-          if sed -n '535,555p' \
-            "$PROJECT_DIR/lib/services/export_service.dart" | grep -nE '_desktopProcess!'; then
-            echo ""
-            echo "ERRO: ainda existe _desktopProcess! no trecho problemático."
+          if grep -n '_desktopProcess!' \
+            "$PROJECT_DIR/lib/services/export_service.dart"; then
+            echo "ERRO: _desktopProcess! ainda existe."
             exit 1
           fi
 
-          echo "OK: nenhum _desktopProcess! encontrado no trecho."
+          echo "OK: nenhum _desktopProcess! encontrado."
 
       - name: Flutter Pub Get
         working-directory: ${{ env.PROJECT_DIR }}
